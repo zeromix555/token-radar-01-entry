@@ -66,7 +66,7 @@
     <h2>How the model works</h2>
     <p class="formula">implied&nbsp;=&nbsp;TVL&nbsp;×&nbsp;category&nbsp;multiple&nbsp;×&nbsp;growth&nbsp;×&nbsp;maturity&nbsp;×&nbsp;chain</p>
     <ul class="explain">
-      <li><b>Category multiple</b> — the median market-cap / TVL of the token-bearing protocols in the same category, computed from this snapshot at run time (at least 4 samples, else the global median), clamped to 0.04–0.90. A category whose tokens trade richly against TVL implies a richer launch.</li>
+      <li><b>Category multiple</b> — the median market-cap / TVL of the token-bearing protocols in the same category, computed from this snapshot at run time. Categories with at least 4 samples use their own median outright; thinner categories are pulled toward the global median in proportion to their sample count — the global median counts as a prior worth 16 observations, so one sample moves the multiple less than 6% of the way, and a category with no traded protocol at all stays on the global median. Clamped to 0.04–0.90. A category whose tokens trade richly against TVL implies a richer launch.</li>
       <li><b>Growth</b> — 1 + clamped 7-day TVL change (−50%…+100%) × 0.6. Growing TVL lifts the implied value; shrinking TVL cuts it.</li>
       <li><b>Maturity</b> — 0.7 + min(age, 1095 days) / 1095 × 0.3. A protocol that ran for years with no token yet has had longer to build a launch. Unknown age counts as 365 days.</li>
       <li><b>Chain</b> — 1 + 0.03 per extra chain, up to 4 extra chains. A multi-chain footprint widens the launch.</li>

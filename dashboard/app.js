@@ -131,7 +131,7 @@
   // ---- model view: category multiples
   $('multrows').innerHTML = Object.keys(R.category_multiples).sort(function (a, b) { return R.category_multiples[b] - R.category_multiples[a]; })
     .map(function (c) { return '<tr><td>' + esc(c) + '</td><td class="num">×' + R.category_multiples[c].toFixed(3) + '</td></tr>'; }).join('') +
-    '<tr><td>Global median (fallback)</td><td class="num">×' + R.global_multiple.toFixed(3) + '</td></tr>';
+    '<tr><td>Global median (prior)</td><td class="num">×' + R.global_multiple.toFixed(3) + '</td></tr>';
 
   // ---- tabs
   function show(view) {

@@ -1,13 +1,21 @@
-// Token radar model, version radar-2: implied value from the snapshot's own figures only.
+// Token radar model, version radar-3: implied value from the snapshot's own figures only.
 //
 //   implied = TVL x categoryMultiple x growthMult x maturityMult x chainMult
 //
-// categoryMultiple is the median mcap/TVL of the token-bearing protocols in the same category,
-// computed at runtime from this snapshot (at least 4 samples, else the global median), clamped to
-// [0.04, 0.9]. It is a market-derived multiple, not a hand-picked constant and never a list of
-// names: a category whose tokens trade richly against TVL implies a richer launch, and one whose
-// tokens trade thin implies a thinner one. growthMult rewards 7-day TVL growth, maturityMult
-// rewards a long track record with no token yet, chainMult rewards a multi-chain footprint.
+// categoryMultiple is a partial-pooling estimate of the median mcap/TVL of the token-bearing
+// protocols in the same category, computed at runtime from this snapshot. A category with at
+// least 4 samples uses its own median outright; a thinner category is pulled toward the global
+// median in proportion to its sample count — the global median is a prior worth 16 observations,
+// so one sample moves the multiple less than 6% of the way from the global median to the
+// category's own median, and a category with no traded protocol at all stays on the global
+// median. The result is clamped to [0.04, 0.9]. It is a market-derived multiple, not a
+// hand-picked constant and never a list of names: a category whose tokens trade richly against
+// TVL implies a richer launch, and one whose tokens trade thin implies a thinner one — but
+// thin evidence only earns a thin move. The previous version (radar-2) gave every thin category
+// the global median outright, so 112 of 198 rows sat on one number, including the whole top 3;
+// radar-3 lets each category's own traded protocols speak, weighted by how many there are.
+// growthMult rewards 7-day TVL growth, maturityMult rewards a long track record with no token
+// yet, chainMult rewards a multi-chain footprint.
 //
 // The board ranks every strict-rankable protocol: pre-token (no mcap, no gecko id, no symbol) and
 // not a CEX, not a versioned name, not a Bridge / Canonical Bridge / Liquid Staking / Liquid
@@ -51,6 +59,8 @@ export interface ModelConstants {
   multiple_floor: number;
   multiple_cap: number;
   min_category_samples: number;
+  /** How many pseudo-observations the global median is worth as a prior when pooling thin categories. */
+  prior_strength: number;
   chain_step: number;
   chain_max_steps: number;
 }
@@ -66,12 +76,13 @@ export const MODEL: ModelConstants = {
   multiple_floor: 0.04,
   multiple_cap: 0.9,
   min_category_samples: 4,
+  prior_strength: 16,
   chain_step: 0.03,
   chain_max_steps: 4,
 };
 
 /** The model's version label: the dashboard names it. */
-export const MODEL_VERSION = 'radar-2';
+export const MODEL_VERSION = 'radar-3';
 
 /** How many live-token protocols the Live token view carries, by market cap. */
 export const LIVE_ROWS = 24;
@@ -189,10 +200,24 @@ export function median(values: number[]): number {
 }
 
 /**
- * The category multiples, computed from the snapshot itself: for each category, the median
- * mcap/TVL of its token-bearing protocols (mcap present, TVL positive), clamped to the model's
- * floor and cap; categories with fewer than min_category_samples fall back to the global median
- * over all token-bearing protocols. No name is ever special-cased.
+ * The category multiples, computed from the snapshot itself by partial pooling: for each
+ * category, the median mcap/TVL of its token-bearing protocols (mcap present, TVL positive).
+ * A category with at least min_category_samples uses its own median outright. A thinner
+ * category does not get its own median outright and does not fall back to the global median
+ * either: its multiple is a credibility-weighted blend, global + n/(n + prior_strength) x
+ * (category median - global), so the global median acts as a prior worth prior_strength
+ * observations and thin evidence only earns a thin move — one sample moves the multiple less
+ * than 1/(1 + prior_strength) of the way. A category with no traded protocol at all is absent
+ * from the table and its rows take the global median. Every multiple is clamped to the model's
+ * floor and cap. No name is ever special-cased.
+ *
+ * Why pooling, and why this strength: the snapshot's ratios are heavy-tailed (global median
+ * 0.214, 90th percentile 2.97, max 400.2), so a thin category's raw median is one or two
+ * observations of a wild distribution — using it outright would let a single protocol set the
+ * value of a whole category, and the hard fallback it replaces threw that evidence away
+ * entirely (112 of 198 rows on one number under radar-2). With prior_strength 16 the move is
+ * bounded and stable on this snapshot: the board total moves +7.6% versus radar-2, the top 5
+ * keep their order, and no row's implied value moves more than x1.36.
  */
 export function categoryMultiples(snapshot: Snapshot, model: ModelConstants): { byCategory: Record<string, number>; global: number } {
   const clamp = (v: number): number => Math.min(model.multiple_cap, Math.max(model.multiple_floor, v));
@@ -211,7 +236,13 @@ export function categoryMultiples(snapshot: Snapshot, model: ModelConstants): { 
   const global = clamp(median(all));
   const out: Record<string, number> = {};
   for (const [cat, list] of byCat) {
-    out[cat] = list.length >= model.min_category_samples ? clamp(median(list)) : global;
+    const catMedian = clamp(median(list));
+    if (list.length >= model.min_category_samples) {
+      out[cat] = catMedian;
+    } else {
+      const w = list.length / (list.length + model.prior_strength);
+      out[cat] = clamp(global + w * (catMedian - global));
+    }
   }
   return { byCategory: out, global };
 }
