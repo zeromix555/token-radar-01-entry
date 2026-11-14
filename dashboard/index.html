@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Launch Radar — pre-token protocols ranked by implied value</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="pulse" aria-hidden="true"></span>
+    <div><h1>TOKEN LAUNCH RADAR</h1><p class="sub">Pre-token protocols, ranked by implied launch value</p></div>
+  </div>
+  <div class="meta"><span id="asof"></span><span id="src"></span></div>
+</header>
+
+<section class="stats" id="stats" aria-label="Board statistics"></section>
+
+<nav class="tabs" aria-label="Views">
+  <button id="tab-board" class="tab active" type="button">Launch board</button>
+  <button id="tab-live" class="tab" type="button">Live tokens</button>
+  <button id="tab-model" class="tab" type="button">How the model works</button>
+</nav>
+
+<section class="controls" id="controls">
+  <label>Search <input id="q" type="search" placeholder="name or slug…" autocomplete="off"></label>
+  <label>Category <select id="cat"><option value="">All categories</option></select></label>
+  <label>Chain <select id="chain"><option value="">All chains</option></select></label>
+  <label>Min TVL <select id="mintvl">
+    <option value="0">Any TVL</option><option value="50000000">$50M+</option>
+    <option value="100000000">$100M+</option><option value="500000000">$500M+</option>
+    <option value="1000000000">$1B+</option></select></label>
+  <label class="check"><input id="watchonly" type="checkbox"> Watchlist only</label>
+  <span id="count" class="count"></span>
+</section>
+
+<main>
+  <section id="view-board" class="view">
+    <table id="board">
+      <thead><tr>
+        <th data-sort="rank" class="num">#</th>
+        <th data-sort="name">Protocol</th>
+        <th data-sort="tvl_usd" class="num">TVL</th>
+        <th data-sort="change_7d" class="num">7d</th>
+        <th data-sort="age_days" class="num">Age</th>
+        <th data-sort="implied_value_usd" class="num">Implied value</th>
+        <th class="barcol">Value</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <p class="note">Every row records no token yet. Implied value is the model's claim, never a market price — click a row for the breakdown and the farm plan.</p>
+  </section>
+
+  <section id="view-live" class="view hidden">
+    <table id="livetab">
+      <thead><tr>
+        <th class="num">#</th><th>Protocol</th><th class="num">TVL</th>
+        <th class="num">Market cap</th><th class="num">7d</th><th>Chains</th>
+      </tr></thead>
+      <tbody id="liverows"></tbody>
+    </table>
+    <p class="note">These protocols already trade. Their values are the market's own, shown apart so they never mix into the launch ranking.</p>
+  </section>
+
+  <section id="view-model" class="view hidden">
+    <h2>How the model works</h2>
+    <p class="formula">implied&nbsp;=&nbsp;TVL&nbsp;×&nbsp;category&nbsp;multiple&nbsp;×&nbsp;growth&nbsp;×&nbsp;maturity&nbsp;×&nbsp;chain</p>
+    <ul class="explain">
+      <li><b>Category multiple</b> — the median market-cap / TVL of the token-bearing protocols in the same category, computed from this snapshot at run time (at least 4 samples, else the global median), clamped to 0.04–0.90. A category whose tokens trade richly against TVL implies a richer launch.</li>
+      <li><b>Growth</b> — 1 + clamped 7-day TVL change (−50%…+100%) × 0.6. Growing TVL lifts the implied value; shrinking TVL cuts it.</li>
+      <li><b>Maturity</b> — 0.7 + min(age, 1095 days) / 1095 × 0.3. A protocol that ran for years with no token yet has had longer to build a launch. Unknown age counts as 365 days.</li>
+      <li><b>Chain</b> — 1 + 0.03 per extra chain, up to 4 extra chains. A multi-chain footprint widens the launch.</li>
+    </ul>
+    <h3>Category multiples in this snapshot</h3>
+    <table id="mults"><thead><tr><th>Category</th><th class="num">Multiple</th></tr></thead><tbody id="multrows"></tbody></table>
+    <h3>What counts as a launch candidate</h3>
+    <p>A protocol ranks only when it records no token (no market cap, no CoinGecko id, no symbol) and is not an exchange, a versioned pool, or a bridge / liquid-staking / restaking product, and its name carries no wrapped / staked / staking word and does not start with an exchange name. That is the watchlist's own rule, reused for the whole board — the watchlist is the floor, never the ceiling.</p>
+    <h3>Farm plans</h3>
+    <p>Every row carries six steps: a fresh wallet, the position sized by TVL ($50–$250), one qualifying action a week, a hold of 30–60 days by age, a claim check on the protocol's own page, and a farm log. Each step states what it costs and how long it takes.</p>
+  </section>
+</main>
+
+<aside id="drawer" class="drawer hidden" aria-label="Protocol detail">
+  <button id="close" type="button" aria-label="Close detail">×</button>
+  <div id="detail"></div>
+</aside>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
