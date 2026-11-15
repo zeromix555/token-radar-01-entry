@@ -8,7 +8,7 @@
 //
 // The dashboard is a static page, no framework and no network: dashboard/index.html,
 // dashboard/app.css and dashboard/app.js read /output/data.js, which this program writes from
-// the same board. Every ranked row carries a six-step farm plan with a cost and a time; the live
+// the same board. Every ranked row carries a seven-step farm plan with a cost and a time; the live
 // view shows token-bearing protocols at the market's own values, apart from the ranked board.
 //
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:

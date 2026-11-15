@@ -1,4 +1,4 @@
-// Token radar model, version radar-3: implied value from the snapshot's own figures only.
+// Token radar model, version radar-4: implied value from the snapshot's own figures only.
 //
 //   implied = TVL x categoryMultiple x growthMult x maturityMult x chainMult
 //
@@ -11,11 +11,34 @@
 // median. The result is clamped to [0.04, 0.9]. It is a market-derived multiple, not a
 // hand-picked constant and never a list of names: a category whose tokens trade richly against
 // TVL implies a richer launch, and one whose tokens trade thin implies a thinner one — but
-// thin evidence only earns a thin move. The previous version (radar-2) gave every thin category
-// the global median outright, so 112 of 198 rows sat on one number, including the whole top 3;
-// radar-3 lets each category's own traded protocols speak, weighted by how many there are.
-// growthMult rewards 7-day TVL growth, maturityMult rewards a long track record with no token
-// yet, chainMult rewards a multi-chain footprint.
+// thin evidence only earns a thin move.
+//
+// Radar-4 changes two things against radar-3, both measured on this snapshot before they were
+// kept. First, the growth weight rises 0.6 -> 1.0: the 7-day change is one of the three signals
+// the model claims to use, but at 0.6 it barely ranked — the middle 80% of rows sat in
+// x0.92-x1.03 (7-day changes p10 -12.9%, p90 +5.6%), so the board effectively ranked on TVL x
+// multiple x maturity alone. At 1.0 the middle 80% spans x0.87-x1.06 and growth actually
+// separates growers from shrinkers, while the clamps still bound the extremes (the +4,448%
+// row stays at x2.0, the -50% floor at x0.5). Measured cost of the change: total implied
+// $4.516B -> $4.477B (-0.9%), top 5 keep their order, 6 rows move >=10 ranks, biggest mover
+// x0.71 (a hard-shrinking protocol, which is the move the signal is for). A weight of 1.5 was
+// tested and rejected: 14 rows move >=10 ranks and the biggest mover falls x0.36, which is
+// a 7-day wobble deciding a rank. Second, every farm plan gains a seventh step, an exit plan
+// with an unwind trigger, and the weekly-action and claim steps are now category- and
+// protocol-specific instead of boilerplate shared by all 198 rows (see farmSteps). The board
+// also carries each row's share of its category's pre-token TVL, shown in the detail drawer:
+// a protocol that IS its category reads differently from one of 34 in it, and the share is
+// computed from the snapshot, not asserted.
+//
+// Rejected in radar-4 with numbers, not repeated as the design: a TVL-weighted category
+// median collapses the global median to the 0.04 clamp floor (over half of all token-bearing
+// TVL sits in protocols with mcap/TVL <= 0.04, so the weighted median is a giant-protocol
+// artifact, not a typical launch), total -56.8% to $1.949B, 152 rows move >=10 ranks, and
+// fallback rows rise 18 -> 55. A median over token-bearing protocols with TVL >= $50M only
+// is worse: total -65.5% to $1.557B, 81 rows move >=10, fallback rows 18 -> 91. The
+// unweighted median stays: it is the multiple of a typical traded protocol, which is what a
+// launch is. growthMult rewards 7-day TVL growth, maturityMult rewards a long track record
+// with no token yet, chainMult rewards a multi-chain footprint.
 //
 // The board ranks every strict-rankable protocol: pre-token (no mcap, no gecko id, no symbol) and
 // not a CEX, not a versioned name, not a Bridge / Canonical Bridge / Liquid Staking / Liquid
@@ -66,7 +89,7 @@ export interface ModelConstants {
 }
 
 export const MODEL: ModelConstants = {
-  growth_weight: 0.6,
+  growth_weight: 1.0,
   growth_floor: -50,
   growth_cap: 100,
   maturity_floor: 0.7,
@@ -82,7 +105,7 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it. */
-export const MODEL_VERSION = 'radar-3';
+export const MODEL_VERSION = 'radar-4';
 
 /** How many live-token protocols the Live token view carries, by market cap. */
 export const LIVE_ROWS = 24;
@@ -135,6 +158,8 @@ export interface RadarRow {
   age_days: number | null;
   implied_value_usd: number;
   base_multiple: number;
+  /** The row's share, in percent to one decimal, of its category's pre-token TVL. */
+  category_share_pct: number;
   growth_multiplier: number;
   maturity_multiplier: number;
   chain_multiplier: number;
@@ -395,15 +420,41 @@ function actionFor(p: SnapshotProtocol, capital: number, chain: string): string 
   return `Deposit $${capital} of USDC into ${name} on ${chain} and keep the position open.`;
 }
 
+/** The category's weekly action: the repeat activity that keeps a farm counted, in the words a farmer can follow. */
+function weeklyActionFor(p: SnapshotProtocol): string {
+  const c = (p.category ?? '').toLowerCase();
+  const name = p.name;
+  const tail = 'so the wallet shows repeat activity instead of one deposit.';
+  if (c.includes('lend') || c.includes('cdp') || c.includes('collateral')) return `Each week, repay a small part of a borrow or top up the supply on ${name}, ${tail}`;
+  if (c.includes('dex') || c.includes('yield') || c.includes('leveraged farm')) return `Each week, swap a small amount or add a little liquidity on ${name}, ${tail}`;
+  if (c.includes('bridge')) return `Each week, bridge a small amount through ${name} and use it in its app, ${tail}`;
+  if (c.includes('staking') || c.includes('restak')) return `Each week, stake a small top-up through ${name} or claim and restake the rewards, ${tail}`;
+  if (c.includes('perpetual') || c.includes('derivative')) return `Each week, close the hedge on ${name} and open a fresh small one, ${tail}`;
+  if (c.includes('prediction')) return `Each week, settle one market on ${name} and open another, ${tail}`;
+  if (c.includes('curator') || c.includes('allocator')) return `Each week, add a small deposit to a ${name} vault or move a little between vaults, ${tail}`;
+  if (c.includes('stable')) return `Each week, mint or deposit a small amount of the stable asset through ${name}, ${tail}`;
+  if (c.includes('rwa')) return `Each week, buy a small amount of the yield asset on ${name}, ${tail}`;
+  if (c.includes('insurance')) return `Each week, check the cover on ${name} and renew or top it up before it lapses, ${tail}`;
+  if (c.includes('options')) return `Each week, roll a small options position on ${name}, ${tail}`;
+  if (c.includes('launchpad')) return `Each week, complete one open task for the next ${name} launch, ${tail}`;
+  return `Each week, make one qualifying action on ${name}, such as a deposit, a borrow, a swap or a vote, ${tail}`;
+}
+
 /**
- * A protocol's farm plan: six steps, each an action with a cost and a time. The plan is derived from
+ * A protocol's farm plan: seven steps, each an action with a cost and a time. The plan is derived from
  * the protocol's own record (category, chains, TVL, age), never from a hand-written list of names.
+ * Radar-4: the weekly action is category-specific and the claim step names the protocol and its
+ * chain, because under radar-3 four of the six steps were the same words on all 198 rows; and a
+ * seventh step, the exit plan, fixes the trigger before the farm starts — claim first, then
+ * withdraw half on a token or snapshot announcement, unwind fully if TVL halves or the points
+ * page disappears — so the farmer is not deciding under pressure.
  */
 export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
   const chain = chainOf(p);
   const capital = capitalFor(p);
   const hold = holdDaysFor(age);
   const action = actionFor(p, capital, chain);
+  const weekly = weeklyActionFor(p);
   return [
     {
       text: `Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline.`,
@@ -416,7 +467,7 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
       time: '15 minutes to set up',
     },
     {
-      text: `Make one qualifying action each week, such as a deposit, a borrow, a swap or a vote.`,
+      text: weekly,
       cost: 'about $2 of gas a week',
       time: '10 minutes a week',
     },
@@ -426,9 +477,14 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
       time: `${hold} days`,
     },
     {
-      text: `Before you withdraw, open the protocol's own points or rewards page and claim only from the link it publishes.`,
+      text: `Before you withdraw, open ${p.name}'s own points or rewards page on ${chain} and confirm your wallet's activity is counted before any snapshot.`,
       cost: 'no fee to check, and never pay to claim',
       time: '10 minutes',
+    },
+    {
+      text: `Decide the unwind trigger now: if ${p.name} announces a token or a points snapshot, claim first, then withdraw half; if its TVL falls by half or its points page disappears, unwind fully and move the capital to the next row on this board.`,
+      cost: 'about $4 of gas to withdraw',
+      time: '15 minutes to unwind',
     },
     {
       text: `Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it.`,
@@ -455,8 +511,8 @@ export function liveRows(snapshot: Snapshot): LiveRow[] {
     }));
 }
 
-/** A board row's compact form for data.js. */
-export function radarRow(row: BoardRow): RadarRow {
+/** A board row's compact form for data.js. `sharePct` is the row's share of its category's pre-token TVL. */
+export function radarRow(row: BoardRow, sharePct: number): RadarRow {
   return {
     rank: row.rank,
     slug: row.slug,
@@ -470,6 +526,7 @@ export function radarRow(row: BoardRow): RadarRow {
     age_days: row.age_days,
     implied_value_usd: row.implied_value_usd,
     base_multiple: row.model.base_multiple,
+    category_share_pct: sharePct,
     growth_multiplier: row.model.growth_multiplier,
     maturity_multiplier: row.model.maturity_multiplier,
     chain_multiplier: row.model.chain_multiplier,
@@ -481,6 +538,18 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
   const board = buildBoard(snapshot, model);
   const live = liveRows(snapshot);
   const { byCategory, global } = categoryMultiples(snapshot, model);
+  // Each category's pre-token TVL: the denominator for a row's share of its category.
+  const preTokenTvl = new Map<string, number>();
+  for (const p of snapshot.protocols) {
+    if (!isPreToken(p)) continue;
+    const cat = p.category ?? '(none)';
+    preTokenTvl.set(cat, (preTokenTvl.get(cat) ?? 0) + p.tvl_usd);
+  }
+  const shareOf = (row: BoardRow): number => {
+    const total = preTokenTvl.get(row.category ?? '(none)') ?? 0;
+    if (total <= 0) return 0;
+    return Math.round((row.tvl_usd / total) * 1000) / 10;
+  };
   const radar: RadarData = {
     as_of: snapshot.as_of,
     source: snapshot.source,
@@ -493,7 +562,7 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     global_multiple: global,
     category_multiples: byCategory,
     watchlist_slugs: snapshot.watchlist,
-    rows: board.map(radarRow),
+    rows: board.map((r) => radarRow(r, shareOf(r))),
     live,
   };
   return { board, radar };

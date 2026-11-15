@@ -62,14 +62,32 @@
     if (/launchpad/.test(c)) return 'Commit $' + cap + ' to the next ' + n + ' launch on ' + chain + ' and complete its tasks.';
     return 'Deposit $' + cap + ' of USDC into ' + n + ' on ' + chain + ' and keep the position open.';
   }
+  function weeklyActionFor(r) {
+    var c = (r.category || '').toLowerCase(), n = r.name;
+    var tail = 'so the wallet shows repeat activity instead of one deposit.';
+    if (/lend|cdp|collateral/.test(c)) return 'Each week, repay a small part of a borrow or top up the supply on ' + n + ', ' + tail;
+    if (/dex|yield|leveraged farm/.test(c)) return 'Each week, swap a small amount or add a little liquidity on ' + n + ', ' + tail;
+    if (/bridge/.test(c)) return 'Each week, bridge a small amount through ' + n + ' and use it in its app, ' + tail;
+    if (/staking|restak/.test(c)) return 'Each week, stake a small top-up through ' + n + ' or claim and restake the rewards, ' + tail;
+    if (/perpetual|derivative/.test(c)) return 'Each week, close the hedge on ' + n + ' and open a fresh small one, ' + tail;
+    if (/prediction/.test(c)) return 'Each week, settle one market on ' + n + ' and open another, ' + tail;
+    if (/curator|allocator/.test(c)) return 'Each week, add a small deposit to a ' + n + ' vault or move a little between vaults, ' + tail;
+    if (/stable/.test(c)) return 'Each week, mint or deposit a small amount of the stable asset through ' + n + ', ' + tail;
+    if (/rwa/.test(c)) return 'Each week, buy a small amount of the yield asset on ' + n + ', ' + tail;
+    if (/insurance/.test(c)) return 'Each week, check the cover on ' + n + ' and renew or top it up before it lapses, ' + tail;
+    if (/options/.test(c)) return 'Each week, roll a small options position on ' + n + ', ' + tail;
+    if (/launchpad/.test(c)) return 'Each week, complete one open task for the next ' + n + ' launch, ' + tail;
+    return 'Each week, make one qualifying action on ' + n + ', such as a deposit, a borrow, a swap or a vote, ' + tail;
+  }
   function farmSteps(r) {
     var chain = r.chains[0] || 'its main chain', cap = capitalFor(r), hold = holdFor(r);
     var steps = [
       ['Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline.', 'under $3 of gas for the first transaction', '5 minutes'],
       [actionFor(r, cap, chain), '$' + cap + ' of capital and about $' + (cap >= 150 ? 8 : 4) + ' of gas', '15 minutes to set up'],
-      ['Make one qualifying action each week, such as a deposit, a borrow, a swap or a vote.', 'about $2 of gas a week', '10 minutes a week'],
+      [weeklyActionFor(r), 'about $2 of gas a week', '10 minutes a week'],
       ['Hold the position for at least ' + hold + ' days so the activity is counted in more than one snapshot.', 'the $' + cap + ' stays in the position', hold + ' days'],
-      ['Before you withdraw, open the protocol\'s own points or rewards page and claim only from the link it publishes.', 'no fee to check, and never pay to claim', '10 minutes'],
+      ['Before you withdraw, open ' + r.name + '\'s own points or rewards page on ' + chain + ' and confirm your wallet\'s activity is counted before any snapshot.', 'no fee to check, and never pay to claim', '10 minutes'],
+      ['Decide the unwind trigger now: if ' + r.name + ' announces a token or a points snapshot, claim first, then withdraw half; if its TVL falls by half or its points page disappears, unwind fully and move the capital to the next row on this board.', 'about $4 of gas to withdraw', '15 minutes to unwind'],
       ['Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it.', 'nothing but the log', '5 minutes']
     ];
     return steps.map(function (s) { return s[0] + ' Cost: ' + s[1] + '. Time: ' + s[2] + '.'; });
@@ -104,7 +122,7 @@
         (watchSet[r.slug] ? '<span class="tag">WATCHLIST</span>' : '') +
         '<br><span class="chains">' + esc(r.chains.slice(0, 4).join(' · ')) + '</span></td>' +
         '<td class="num">' + money(r.tvl_usd) + '</td><td class="num">' + pct(r.change_7d) + '</td>' +
-        '<td class="num">' + ageTxt(r.age_days) + '</td><td class="num">' + money(r.implied_value_usd) + '</td>' +
+        '<td class="num">' + ageTxt(r.age_days) + '</td><td class="num">×' + r.base_multiple.toFixed(3) + '</td><td class="num">' + money(r.implied_value_usd) + '</td>' +
         '<td class="barcol"><div class="bar"><i style="width:' + w + '%"></i></div></td></tr>';
     }).join('');
   }
@@ -128,10 +146,18 @@
       '<td class="num">' + pct(p.change_7d) + '</td><td class="chains">' + esc(p.chains.slice(0, 4).join(' · ')) + '</td></tr>';
   }).join('');
 
-  // ---- model view: category multiples
+  // ---- model view: category multiples + categories by total implied value
   $('multrows').innerHTML = Object.keys(R.category_multiples).sort(function (a, b) { return R.category_multiples[b] - R.category_multiples[a]; })
     .map(function (c) { return '<tr><td>' + esc(c) + '</td><td class="num">×' + R.category_multiples[c].toFixed(3) + '</td></tr>'; }).join('') +
     '<tr><td>Global median (prior)</td><td class="num">×' + R.global_multiple.toFixed(3) + '</td></tr>';
+  var catAgg = {};
+  rows.forEach(function (r) {
+    var c = r.category || '(none)';
+    if (!catAgg[c]) catAgg[c] = { n: 0, total: 0, top: r };
+    catAgg[c].n += 1; catAgg[c].total += r.implied_value_usd;
+  });
+  $('catsumrows').innerHTML = Object.keys(catAgg).sort(function (a, b) { return catAgg[b].total - catAgg[a].total; })
+    .map(function (c) { return '<tr><td>' + esc(c) + '</td><td class="num">' + catAgg[c].n + '</td><td class="num">' + money(catAgg[c].total) + '</td><td>' + esc(catAgg[c].top.name) + ' (#' + catAgg[c].top.rank + ')</td></tr>'; }).join('');
 
   // ---- tabs
   function show(view) {
@@ -159,6 +185,7 @@
     $('detail').innerHTML =
       '<h2>#' + r.rank + ' ' + esc(r.name) + '</h2>' +
       '<div class="kv"><span>Category</span><b>' + esc(r.category || '—') + '</b>' +
+      '<span>Category share</span><b>' + r.category_share_pct.toFixed(1) + '% of pre-token ' + esc(r.category || '—') + ' TVL</b>' +
       '<span>Chains</span><b>' + esc(r.chains.join(', ')) + '</b>' +
       '<span>TVL</span><b>' + money(r.tvl_usd) + '</b>' +
       '<span>7-day change</span><b>' + (r.change_7d === null ? '—' : (r.change_7d > 0 ? '+' : '') + r.change_7d.toFixed(1) + '%') + '</b>' +
@@ -169,7 +196,7 @@
       '<div><span>Maturity ×' + r.maturity_multiplier.toFixed(3) + '</span><span>' + ageTxt(r.age_days) + '</span></div>' +
       '<div><span>Chain ×' + r.chain_multiplier.toFixed(3) + '</span><span>' + r.chains.length + ' chain' + (r.chains.length === 1 ? '' : 's') + '</span></div>' +
       '<div class="tot"><span>Implied value</span><span>' + money(r.implied_value_usd) + '</span></div></div>' +
-      '<h3>Farm plan — 6 steps</h3><ol class="steps">' + steps.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>' +
+      '<h3>Farm plan — 7 steps</h3><ol class="steps">' + steps.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>' +
       '<p class="risk">Risk: an implied value is a model claim, not a promise. A launch may never come, a snapshot may re-weight activity, and withdrawing early can void a farm. Never pay to claim, and never farm with funds you cannot leave locked for the full hold.</p>';
     $('drawer').classList.remove('hidden');
   });
