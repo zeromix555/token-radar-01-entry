@@ -86,6 +86,33 @@
     if (/launchpad/.test(c)) return 'Each week, complete one open task for the next ' + n + ' launch, ' + tail;
     return 'Each week, make one qualifying action on ' + n + ', such as a deposit, a borrow, a swap or a vote, ' + tail;
   }
+  // What to watch while a farm runs, by category family: the same table as lib/model.ts,
+  // so the drawer shows the step the model wrote into board.json.
+  var WATCH_SIGNALS = [
+    [/lend|cdp|collateral/, 'Watch the borrow rate and the collateral factor: a rate spike or a factor cut can shrink the rewards or put a borrowed position at risk.'],
+    [/dex|yield|leveraged farm/, 'Watch the pool fee and the reward emission: a fee cut or an emission halving can halve what the position earns.'],
+    [/bridge/, 'Watch the bridge fee and the destination chain: a fee rise or a paused route can strand the bridged funds.'],
+    [/staking|restak/, 'Watch the staking yield and the unbonding delay: a yield cut or a longer delay changes what the stake is worth and when it can leave.'],
+    [/perpetual|derivative/, 'Watch the funding rate and the open interest: a funding flip can turn a hedge into a bleed.'],
+    [/prediction/, 'Watch the market resolution rule: a disputed outcome can void the position outright.'],
+    [/curator|allocator/, 'Watch the vault allocation and the curator fee: a reallocation or a fee rise moves the vault return.'],
+    [/stable/, 'Watch the peg and the redemption fee: a depeg or a fee rise is the first sign the stable asset is stressed.'],
+    [/rwa/, 'Watch the underlying yield and the redemption window: a yield cut or a closed window locks the capital longer than planned.'],
+    [/insurance/, 'Watch the cover capacity and the claim history: a capacity cut or a denied claim says the cover is thinner than it looks.'],
+    [/options/, 'Watch the implied volatility and the expiry calendar: a volatility collapse can leave the vault earning nothing.'],
+    [/launchpad/, 'Watch the launch calendar and the allocation rule: a delayed launch or a smaller allocation changes the whole payoff.'],
+    [/ai|agent/, 'Watch the agent usage and the fee split: a usage drop or a split change cuts the revenue the farm depends on.'],
+    [/privacy/, 'Watch the anonymity set and the compliance notice: a shrinking set or a new notice can end the farm early.'],
+    [/gaming|nft|marketplace/, 'Watch the trading volume and the royalty rule: a volume collapse or a royalty cut removes the reason to hold.'],
+    [/.*/, 'Watch the points page and the TVL each week: a points re-weight or a TVL halving is the first sign the farm is over.']
+  ];
+  function watchFor(r) {
+    var c = (r.category || '').toLowerCase();
+    for (var i = 0; i < WATCH_SIGNALS.length; i++) {
+      if (WATCH_SIGNALS[i][0].test(c)) return WATCH_SIGNALS[i][1];
+    }
+    return WATCH_SIGNALS[WATCH_SIGNALS.length - 1][1];
+  }
   function farmSteps(r) {
     var chain = r.chains[0] || 'its main chain', cap = capitalFor(r), hold = holdFor(r);
     var steps = [
@@ -96,7 +123,8 @@
       ['Hold the position for at least ' + hold + ' days so the activity is counted in more than one snapshot.', 'the $' + cap + ' stays in the position', hold + ' days'],
       ['Before you withdraw, open ' + r.name + '\'s own points or rewards page on ' + chain + ' and confirm your wallet\'s activity is counted before any snapshot.', 'no fee to check, and never pay to claim', '10 minutes'],
       ['Decide the unwind trigger now: if ' + r.name + ' announces a token or a points snapshot, claim first, then withdraw half; if its TVL falls by half or its points page disappears, unwind fully and move the capital to the next row on this board.', 'about $4 of gas to withdraw', '15 minutes to unwind'],
-      ['Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it.', 'nothing but the log', '5 minutes']
+      ['Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it.', 'nothing but the log', '5 minutes'],
+      ['Each week, check one thing: ' + watchFor(r), 'nothing to check', '5 minutes a week']
     ];
     return steps.map(function (s) { return s[0] + ' Cost: ' + s[1] + '. Time: ' + s[2] + '.'; });
   }
@@ -240,8 +268,8 @@
       '<div><span>Maturity ×' + r.maturity_multiplier.toFixed(3) + '</span><span>' + ageTxt(r.age_days) + '</span></div>' +
       '<div><span>Chain ×' + r.chain_multiplier.toFixed(3) + '</span><span>' + r.chains.length + ' chain' + (r.chains.length === 1 ? '' : 's') + '</span></div>' +
       '<div class="tot"><span>Implied value</span><span>' + money(r.implied_value_usd) + '</span></div></div>' +
-      '<h3>Farm plan — 8 steps</h3><ol class="steps">' + steps.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>' +
-      '<p class="risk">Risk: an implied value is a model claim, not a promise. A launch may never come, a snapshot may re-weight activity, and withdrawing early can void a farm. Never pay to claim, and never farm with funds you cannot leave locked for the full hold.</p>';
+      '<h3>Farm plan — 9 steps</h3><ol class="steps">' + steps.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>' +
+      '<p class="risk">Risk: ' + esc(r.risk_note) + ' An implied value is a model claim, not a promise. Never pay to claim, and never farm with funds you cannot leave locked for the full hold.</p>';
     $('drawer').classList.remove('hidden');
   });
 

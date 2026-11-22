@@ -17,7 +17,7 @@
 //
 // The dashboard is a static page, no framework and no network: dashboard/index.html,
 // dashboard/app.css and dashboard/app.js read /output/data.js, which this program writes from
-// the same board. Every ranked row carries an eight-step farm plan with a cost and a time; the
+// the same board. Every ranked row carries a nine-step farm plan with a cost and a time; the
 // live view shows the top 40 token-bearing protocols at the market's own values, apart from
 // the ranked board; the movers view lists the board's fastest growers and fastest shrinkers.
 //
