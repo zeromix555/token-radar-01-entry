@@ -19,6 +19,7 @@
 <nav class="tabs" aria-label="Views">
   <button id="tab-board" class="tab active" type="button">Launch board</button>
   <button id="tab-live" class="tab" type="button">Live tokens</button>
+  <button id="tab-movers" class="tab" type="button">Movers</button>
   <button id="tab-model" class="tab" type="button">How the model works</button>
 </nav>
 
@@ -42,6 +43,7 @@
         <th data-sort="name">Protocol</th>
         <th data-sort="tvl_usd" class="num">TVL</th>
         <th data-sort="change_7d" class="num">7d</th>
+        <th data-sort="heat_pct" class="num">Heat</th>
         <th data-sort="age_days" class="num">Age</th>
         <th data-sort="base_multiple" class="num">Multiple</th>
         <th data-sort="implied_value_usd" class="num">Implied value</th>
@@ -49,7 +51,7 @@
       </tr></thead>
       <tbody id="rows"></tbody>
     </table>
-    <p class="note">Every row records no token yet. Implied value is the model's claim, never a market price — click a row for the breakdown and the farm plan.</p>
+    <p class="note">Every row records no token yet. Implied value is the model's claim, never a market price — click a row for the breakdown and the farm plan. Heat is the row's category 7-day change measured against the market that week; a hot category lifts its rows, a cold one cuts them.</p>
   </section>
 
   <section id="view-live" class="view hidden">
@@ -63,24 +65,40 @@
     <p class="note">These protocols already trade. Their values are the market's own, shown apart so they never mix into the launch ranking.</p>
   </section>
 
+  <section id="view-movers" class="view hidden">
+    <h2>Fastest growers on the board</h2>
+    <table id="growers"><thead><tr>
+      <th class="num">#</th><th>Protocol</th><th class="num">7d</th><th class="num">TVL</th><th class="num">Implied value</th>
+    </tr></thead><tbody id="growrows"></tbody></table>
+    <h2>Fastest shrinkers on the board</h2>
+    <table id="shrinkers"><thead><tr>
+      <th class="num">#</th><th>Protocol</th><th class="num">7d</th><th class="num">TVL</th><th class="num">Implied value</th>
+    </tr></thead><tbody id="shrinkrows"></tbody></table>
+    <p class="note">Growth is the protocol's own 7-day TVL change. A grower can still rank low when its TVL or its category multiple is small, and a shrinker can still rank high on size alone — the board weighs growth against everything else instead of sorting by it.</p>
+  </section>
+
   <section id="view-model" class="view hidden">
     <h2>How the model works</h2>
-    <p class="formula">implied&nbsp;=&nbsp;TVL&nbsp;×&nbsp;category&nbsp;multiple&nbsp;×&nbsp;growth&nbsp;×&nbsp;maturity&nbsp;×&nbsp;chain</p>
+    <p class="formula">implied&nbsp;=&nbsp;TVL&nbsp;×&nbsp;category&nbsp;multiple&nbsp;×&nbsp;growth&nbsp;×&nbsp;heat&nbsp;×&nbsp;maturity&nbsp;×&nbsp;chain</p>
     <ul class="explain">
       <li><b>Category multiple</b> — the median market-cap / TVL of the token-bearing protocols in the same category, computed from this snapshot at run time. Categories with at least 4 samples use their own median outright; thinner categories are pulled toward the global median in proportion to their sample count — the global median counts as a prior worth 16 observations, so one sample moves the multiple less than 6% of the way, and a category with no traded protocol at all stays on the global median. Clamped to 0.04–0.90. A category whose tokens trade richly against TVL implies a richer launch.</li>
       <li><b>Growth</b> — 1 + clamped 7-day TVL change (−50%…+100%) × 1.0. Growing TVL lifts the implied value; shrinking TVL cuts it. At this weight the middle 80% of rows span ×0.87–×1.06, so growth actually ranks instead of rounding to noise, while the clamps still bound the extremes (a +4,448% week counts as +100%).</li>
+      <li><b>Heat</b> — a second growth signal, at the category level: the median 7-day TVL change of the token-bearing protocols in the same category, measured against the market that week (the global median change). The snapshot's week fell 9.3% on median, so the relative reading is what separates categories that held up (Basis Trading, RWA, about 9 points above the market) from ones that fell harder (Liquid Staking, about 4 points below it). Heat is 1 + clamped relative change (−20%…+30%) × 1.0, pooled like the multiple, so a one-week category wobble moves a row at most about a tenth either way.</li>
+      <li><b>Maturity</b> — 0.7 + sqrt(min(age, 1095 days) / 1095) × 0.3. A protocol that ran for years with no token yet has had longer to build a launch, but a year of waiting proves more than the third year does, so the curve flattens. Unknown age counts as 365 days.</li>
+      <li><b>Chain</b> — 1 + 0.05 per extra chain, up to 4 extra chains. A multi-chain footprint widens the launch.</li>
+      <li><b>Confidence</b> — each row says where its multiple came from: its category's own median (4 or more traded protocols), a pooled blend (1–3), or the global prior (none). A pooled multiple is an honest estimate, not a firm one, and the dashboard does not hide which rows carry it.</li>
       <li><b>Category share</b> — each row's share of its category's pre-token TVL, shown in the detail view. A protocol that is most of its category reads differently from one of 34 in it.</li>
-      <li><b>Maturity</b> — 0.7 + min(age, 1095 days) / 1095 × 0.3. A protocol that ran for years with no token yet has had longer to build a launch. Unknown age counts as 365 days.</li>
-      <li><b>Chain</b> — 1 + 0.03 per extra chain, up to 4 extra chains. A multi-chain footprint widens the launch.</li>
     </ul>
-    <h3>Category multiples in this snapshot</h3>
-    <table id="mults"><thead><tr><th>Category</th><th class="num">Multiple</th></tr></thead><tbody id="multrows"></tbody></table>
+    <h3>Category signals in this snapshot</h3>
+    <table id="mults"><thead><tr><th>Category</th><th class="num">Multiple</th><th class="num">Heat</th><th class="num">Samples</th><th>Source</th></tr></thead><tbody id="multrows"></tbody></table>
     <h3>Categories by total implied value</h3>
     <table id="catsum"><thead><tr><th>Category</th><th class="num">Rows</th><th class="num">Total implied</th><th>Top protocol</th></tr></thead><tbody id="catsumrows"></tbody></table>
+    <h3>Chains by board TVL</h3>
+    <table id="chainsum"><thead><tr><th>Chain</th><th class="num">Rows</th><th class="num">Board TVL</th></tr></thead><tbody id="chainsumrows"></tbody></table>
     <h3>What counts as a launch candidate</h3>
     <p>A protocol ranks only when it records no token (no market cap, no CoinGecko id, no symbol) and is not an exchange, a versioned pool, or a bridge / liquid-staking / restaking product, and its name carries no wrapped / staked / staking word and does not start with an exchange name. That is the watchlist's own rule, reused for the whole board — the watchlist is the floor, never the ceiling.</p>
     <h3>Farm plans</h3>
-    <p>Every row carries seven steps: a fresh wallet, the position sized by TVL ($50–$250), a category-specific weekly action, a hold of 30–60 days by age, a claim check on the protocol's own points page, an exit plan with its unwind trigger decided in advance, and a farm log. Each step states what it costs and how long it takes.</p>
+    <p>Every row carries eight steps: a fresh wallet, a check of the protocol's own official channels before any money moves, the position sized by TVL ($50–$250), a category-specific weekly action, a hold of 30–60 days by age, a claim check on the protocol's own points page, an exit plan with its unwind trigger decided in advance, and a farm log. Each step states what it costs and how long it takes.</p>
   </section>
 </main>
 

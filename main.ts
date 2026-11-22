@@ -1,4 +1,4 @@
-// Token radar entry (Node 22, standard library only).
+// Token radar entry, radar-6 (Node 22, standard library only).
 //
 // Reads the sealed snapshot from /input/snapshot.json (or --input <file|dir>), scores every
 // strict-rankable pre-token protocol with the model in lib/model.ts, writes the ranked board to
@@ -6,10 +6,20 @@
 // dashboard/ and screenshots/ to /output. Last, it writes /output/dossier.json with the vendored
 // make.fun library.
 //
+// The model, radar-6:
+//   implied = TVL x categoryMultiple x growthMult x heatMult x maturityMult x chainMult
+// where the category multiple is a partial-pooling estimate of the median mcap/TVL of the
+// token-bearing protocols in the same category, heat is the category's median 7-day TVL change
+// measured relative to the market that week (same pooling), maturity is a square-root curve
+// over 3 years (a year of waiting proves more than the third year does), and the chain step is
+// 0.05 per extra chain. Every number is computed at runtime from the snapshot; no protocol
+// is ever named in the rule.
+//
 // The dashboard is a static page, no framework and no network: dashboard/index.html,
 // dashboard/app.css and dashboard/app.js read /output/data.js, which this program writes from
-// the same board. Every ranked row carries a seven-step farm plan with a cost and a time; the live
-// view shows token-bearing protocols at the market's own values, apart from the ranked board.
+// the same board. Every ranked row carries an eight-step farm plan with a cost and a time; the
+// live view shows the top 40 token-bearing protocols at the market's own values, apart from
+// the ranked board; the movers view lists the board's fastest growers and fastest shrinkers.
 //
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input ../input/snapshot.json

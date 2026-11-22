@@ -1,11 +1,9 @@
-// Token Launch Radar dashboard: renders window.RADAR (written by main.ts) with no network.
+// Token Launch Radar dashboard, radar-6: renders window.RADAR (written by main.ts) with no network.
 (function () {
   'use strict';
   var R = window.RADAR;
   if (!R) { document.body.textContent = 'No radar data.'; return; }
   var rows = R.rows, live = R.live;
-  var watch = {};
-  R.watchlist = R.watchlist || [];
   var $ = function (id) { return document.getElementById(id); };
   var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
   var money = function (n) {
@@ -19,9 +17,17 @@
     var cls = v > 0 ? 'up' : v < 0 ? 'down' : 'flat';
     return '<span class="' + cls + '">' + (v > 0 ? '+' : '') + v.toFixed(1) + '%</span>';
   };
+  var heatTxt = function (v) {
+    if (v === null || v === undefined) return '<span class="flat">—</span>';
+    var cls = v > 0 ? 'hot' : v < 0 ? 'cold' : 'flat';
+    return '<span class="' + cls + '">' + (v > 0 ? '+' : '') + v.toFixed(1) + 'pp</span>';
+  };
   var ageTxt = function (d) { return d === null ? '—' : d >= 365 ? (d / 365).toFixed(1) + 'y' : d + 'd'; };
   var maxImp = rows.length ? rows[0].implied_value_usd : 1;
   var totalImp = rows.reduce(function (a, r) { return a + r.implied_value_usd; }, 0);
+  var chainSet = {};
+  rows.forEach(function (r) { r.chains.forEach(function (c) { chainSet[c] = 1; }); });
+  var chainCount = Object.keys(chainSet).length;
 
   // ---- header + stats
   $('asof').textContent = 'Snapshot ' + R.as_of + ' · floor ' + money(R.floor_usd);
@@ -30,7 +36,8 @@
     ['Watchlist', R.watchlist_size + ' protocols'],
     ['Board', R.board_size + ' ranked'],
     ['Total implied value', money(totalImp)],
-    ['Median category multiple', '×' + R.global_multiple.toFixed(3)]
+    ['Median category multiple', '×' + R.global_multiple.toFixed(3)],
+    ['Chains covered', String(chainCount)]
   ].map(function (s) { return '<div class="stat"><b>' + esc(s[0] === 'Total implied value' || s[0] === 'Median category multiple' ? s[1] : s[1].split(' ')[0]) + '</b><span>' + esc(s[0]) + '</span></div>'; }).join('');
 
   // ---- filter selects
@@ -38,12 +45,12 @@
   rows.forEach(function (r) { if (r.category) cats[r.category] = 1; r.chains.forEach(function (c) { chains[c] = 1; }); });
   Object.keys(cats).sort().forEach(function (c) { $('cat').appendChild(new Option(c, c)); });
   Object.keys(chains).sort().forEach(function (c) { $('chain').appendChild(new Option(c, c)); });
-  // watchlist membership comes from rank data: watchlist slugs are the board's first-page set is unknown here,
-  // so the toggle filters on the flag the program writes into each row's slug set below.
   var watchSet = {};
   (R.watchlist_slugs || []).forEach(function (s) { watchSet[s] = 1; });
 
-  // ---- farm steps, regenerated in the page from the same record the model used
+  // ---- farm steps, regenerated in the page from the same record the model used.
+  // These eight steps must match lib/model.ts farmSteps exactly: the detail drawer shows
+  // them, and board.json carries the model's own copy.
   function capitalFor(r) { return r.tvl_usd >= 5e9 ? 250 : r.tvl_usd >= 1e9 ? 150 : r.tvl_usd >= 1e8 ? 100 : 50; }
   function holdFor(r) { return r.age_days === null ? 30 : r.age_days < 180 ? 60 : r.age_days < 365 ? 45 : 30; }
   function actionFor(r, cap, chain) {
@@ -83,6 +90,7 @@
     var chain = r.chains[0] || 'its main chain', cap = capitalFor(r), hold = holdFor(r);
     var steps = [
       ['Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline.', 'under $3 of gas for the first transaction', '5 minutes'],
+      ['Before you deposit, check ' + r.name + ' through its own official channels on ' + chain + ': confirm the app address from its docs or profile, never follow a deposit link from a DM, a reply or a search ad, and stop if the page asks for an approval beyond the deposit itself.', 'nothing to check', '10 minutes'],
       [actionFor(r, cap, chain), '$' + cap + ' of capital and about $' + (cap >= 150 ? 8 : 4) + ' of gas', '15 minutes to set up'],
       [weeklyActionFor(r), 'about $2 of gas a week', '10 minutes a week'],
       ['Hold the position for at least ' + hold + ' days so the activity is counted in more than one snapshot.', 'the $' + cap + ' stays in the position', hold + ' days'],
@@ -107,6 +115,10 @@
       return true;
     });
   }
+  function srcTag(r) {
+    if (r.multiple_source === 'own median') return '';
+    return '<span class="src">' + esc(r.multiple_source.toUpperCase()) + '</span>';
+  }
   function renderBoard() {
     var list = filtered().slice().sort(function (a, b) {
       var av = a[sortKey], bv = b[sortKey];
@@ -119,9 +131,10 @@
       var w = Math.max(2, Math.round(r.implied_value_usd / maxImp * 100));
       return '<tr data-slug="' + esc(r.slug) + '"><td class="num">' + r.rank + '</td>' +
         '<td><span class="name">' + esc(r.name) + '</span>' + (r.category ? '<span class="cat">' + esc(r.category) + '</span>' : '') +
-        (watchSet[r.slug] ? '<span class="tag">WATCHLIST</span>' : '') +
+        (watchSet[r.slug] ? '<span class="tag">WATCHLIST</span>' : '') + srcTag(r) +
         '<br><span class="chains">' + esc(r.chains.slice(0, 4).join(' · ')) + '</span></td>' +
         '<td class="num">' + money(r.tvl_usd) + '</td><td class="num">' + pct(r.change_7d) + '</td>' +
+        '<td class="num">' + heatTxt(r.heat_pct) + '</td>' +
         '<td class="num">' + ageTxt(r.age_days) + '</td><td class="num">×' + r.base_multiple.toFixed(3) + '</td><td class="num">' + money(r.implied_value_usd) + '</td>' +
         '<td class="barcol"><div class="bar"><i style="width:' + w + '%"></i></div></td></tr>';
     }).join('');
@@ -146,10 +159,28 @@
       '<td class="num">' + pct(p.change_7d) + '</td><td class="chains">' + esc(p.chains.slice(0, 4).join(' · ')) + '</td></tr>';
   }).join('');
 
-  // ---- model view: category multiples + categories by total implied value
-  $('multrows').innerHTML = Object.keys(R.category_multiples).sort(function (a, b) { return R.category_multiples[b] - R.category_multiples[a]; })
-    .map(function (c) { return '<tr><td>' + esc(c) + '</td><td class="num">×' + R.category_multiples[c].toFixed(3) + '</td></tr>'; }).join('') +
-    '<tr><td>Global median (prior)</td><td class="num">×' + R.global_multiple.toFixed(3) + '</td></tr>';
+  // ---- movers view: fastest growers and shrinkers among board rows with 7-day data
+  function moverRow(r) {
+    return '<tr data-slug="' + esc(r.slug) + '"><td class="num">' + r.rank + '</td>' +
+      '<td><span class="name">' + esc(r.name) + '</span>' + (r.category ? '<span class="cat">' + esc(r.category) + '</span>' : '') + '</td>' +
+      '<td class="num">' + pct(r.change_7d) + '</td><td class="num">' + money(r.tvl_usd) + '</td>' +
+      '<td class="num">' + money(r.implied_value_usd) + '</td></tr>';
+  }
+  var withChange = rows.filter(function (r) { return r.change_7d !== null; });
+  var growers = withChange.slice().sort(function (a, b) { return b.change_7d - a.change_7d; }).slice(0, 10);
+  var shrinkers = withChange.slice().sort(function (a, b) { return a.change_7d - b.change_7d; }).slice(0, 10);
+  $('growrows').innerHTML = growers.map(moverRow).join('');
+  $('shrinkrows').innerHTML = shrinkers.map(moverRow).join('');
+
+  // ---- model view: category signals + categories by total implied value + chains by board TVL
+  var sigs = R.category_signals || {};
+  var multKeys = Object.keys(sigs).sort(function (a, b) { return sigs[b].multiple - sigs[a].multiple; });
+  $('multrows').innerHTML = multKeys.map(function (c) {
+    var s = sigs[c];
+    return '<tr><td>' + esc(c) + '</td><td class="num">×' + s.multiple.toFixed(3) + '</td>' +
+      '<td class="num">' + heatTxt(s.heat_pct) + '</td><td class="num">' + s.samples + '</td><td>' + esc(s.source) + '</td></tr>';
+  }).join('') +
+    '<tr><td>Global median (prior)</td><td class="num">×' + R.global_multiple.toFixed(3) + '</td><td class="num">' + heatTxt(0) + '</td><td class="num">—</td><td>global prior</td></tr>';
   var catAgg = {};
   rows.forEach(function (r) {
     var c = r.category || '(none)';
@@ -158,10 +189,19 @@
   });
   $('catsumrows').innerHTML = Object.keys(catAgg).sort(function (a, b) { return catAgg[b].total - catAgg[a].total; })
     .map(function (c) { return '<tr><td>' + esc(c) + '</td><td class="num">' + catAgg[c].n + '</td><td class="num">' + money(catAgg[c].total) + '</td><td>' + esc(catAgg[c].top.name) + ' (#' + catAgg[c].top.rank + ')</td></tr>'; }).join('');
+  var chainAgg = {};
+  rows.forEach(function (r) {
+    r.chains.forEach(function (c) {
+      if (!chainAgg[c]) chainAgg[c] = { n: 0, total: 0 };
+      chainAgg[c].n += 1; chainAgg[c].total += r.tvl_usd;
+    });
+  });
+  $('chainsumrows').innerHTML = Object.keys(chainAgg).sort(function (a, b) { return chainAgg[b].total - chainAgg[a].total; }).slice(0, 10)
+    .map(function (c) { return '<tr><td>' + esc(c) + '</td><td class="num">' + chainAgg[c].n + '</td><td class="num">' + money(chainAgg[c].total) + '</td></tr>'; }).join('');
 
   // ---- tabs
   function show(view) {
-    ['board', 'live', 'model'].forEach(function (v) {
+    ['board', 'live', 'movers', 'model'].forEach(function (v) {
       $('view-' + v).classList.toggle('hidden', v !== view);
       $('tab-' + v).classList.toggle('active', v === view);
     });
@@ -170,6 +210,7 @@
   }
   $('tab-board').addEventListener('click', function () { show('board'); });
   $('tab-live').addEventListener('click', function () { show('live'); });
+  $('tab-movers').addEventListener('click', function () { show('movers'); });
   $('tab-model').addEventListener('click', function () { show('model'); });
 
   // ---- detail drawer
@@ -186,17 +227,20 @@
       '<h2>#' + r.rank + ' ' + esc(r.name) + '</h2>' +
       '<div class="kv"><span>Category</span><b>' + esc(r.category || '—') + '</b>' +
       '<span>Category share</span><b>' + r.category_share_pct.toFixed(1) + '% of pre-token ' + esc(r.category || '—') + ' TVL</b>' +
+      '<span>Multiple source</span><b>' + esc(r.multiple_source) + ' (' + r.category_samples + ' traded sample' + (r.category_samples === 1 ? '' : 's') + ')</b>' +
       '<span>Chains</span><b>' + esc(r.chains.join(', ')) + '</b>' +
       '<span>TVL</span><b>' + money(r.tvl_usd) + '</b>' +
       '<span>7-day change</span><b>' + (r.change_7d === null ? '—' : (r.change_7d > 0 ? '+' : '') + r.change_7d.toFixed(1) + '%') + '</b>' +
+      '<span>Category heat</span><b>' + (r.heat_pct > 0 ? '+' : '') + r.heat_pct.toFixed(1) + ' points vs the market</b>' +
       '<span>Listed</span><b>' + esc(r.listed_at || 'unknown') + ' (' + ageTxt(r.age_days) + ')</b>' +
       '<span>Token</span><b>records no token</b></div>' +
       '<div class="eq"><div><span>TVL × category multiple ×' + r.base_multiple.toFixed(3) + '</span><span>' + money(r.tvl_usd * r.base_multiple) + '</span></div>' +
       '<div><span>Growth ×' + r.growth_multiplier.toFixed(3) + '</span><span>' + (r.change_7d === null ? 'no 7d data' : r.change_7d.toFixed(1) + '%') + '</span></div>' +
+      '<div><span>Heat ×' + r.heat_multiplier.toFixed(3) + '</span><span>' + (r.heat_pct > 0 ? '+' : '') + r.heat_pct.toFixed(1) + 'pp vs market</span></div>' +
       '<div><span>Maturity ×' + r.maturity_multiplier.toFixed(3) + '</span><span>' + ageTxt(r.age_days) + '</span></div>' +
       '<div><span>Chain ×' + r.chain_multiplier.toFixed(3) + '</span><span>' + r.chains.length + ' chain' + (r.chains.length === 1 ? '' : 's') + '</span></div>' +
       '<div class="tot"><span>Implied value</span><span>' + money(r.implied_value_usd) + '</span></div></div>' +
-      '<h3>Farm plan — 7 steps</h3><ol class="steps">' + steps.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>' +
+      '<h3>Farm plan — 8 steps</h3><ol class="steps">' + steps.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>' +
       '<p class="risk">Risk: an implied value is a model claim, not a promise. A launch may never come, a snapshot may re-weight activity, and withdrawing early can void a farm. Never pay to claim, and never farm with funds you cannot leave locked for the full hold.</p>';
     $('drawer').classList.remove('hidden');
   });

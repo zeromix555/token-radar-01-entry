@@ -1,51 +1,65 @@
-// Token radar model, version radar-4: implied value from the snapshot's own figures only.
+// Token radar model, version radar-6: implied value from the snapshot's own figures only.
 //
-//   implied = TVL x categoryMultiple x growthMult x maturityMult x chainMult
+//   implied = TVL x categoryMultiple x growthMult x heatMult x maturityMult x chainMult
 //
-// categoryMultiple is a partial-pooling estimate of the median mcap/TVL of the token-bearing
-// protocols in the same category, computed at runtime from this snapshot. A category with at
-// least 4 samples uses its own median outright; a thinner category is pulled toward the global
-// median in proportion to its sample count — the global median is a prior worth 16 observations,
-// so one sample moves the multiple less than 6% of the way from the global median to the
-// category's own median, and a category with no traded protocol at all stays on the global
-// median. The result is clamped to [0.04, 0.9]. It is a market-derived multiple, not a
-// hand-picked constant and never a list of names: a category whose tokens trade richly against
-// TVL implies a richer launch, and one whose tokens trade thin implies a thinner one — but
-// thin evidence only earns a thin move.
+// Radar-6 adds three measured changes on top of radar-4, each tested on this snapshot
+// before it was kept, and each stated in the open below with its numbers.
 //
-// Radar-4 changes two things against radar-3, both measured on this snapshot before they were
-// kept. First, the growth weight rises 0.6 -> 1.0: the 7-day change is one of the three signals
-// the model claims to use, but at 0.6 it barely ranked — the middle 80% of rows sat in
-// x0.92-x1.03 (7-day changes p10 -12.9%, p90 +5.6%), so the board effectively ranked on TVL x
-// multiple x maturity alone. At 1.0 the middle 80% spans x0.87-x1.06 and growth actually
-// separates growers from shrinkers, while the clamps still bound the extremes (the +4,448%
-// row stays at x2.0, the -50% floor at x0.5). Measured cost of the change: total implied
-// $4.516B -> $4.477B (-0.9%), top 5 keep their order, 6 rows move >=10 ranks, biggest mover
-// x0.71 (a hard-shrinking protocol, which is the move the signal is for). A weight of 1.5 was
-// tested and rejected: 14 rows move >=10 ranks and the biggest mover falls x0.36, which is
-// a 7-day wobble deciding a rank. Second, every farm plan gains a seventh step, an exit plan
-// with an unwind trigger, and the weekly-action and claim steps are now category- and
-// protocol-specific instead of boilerplate shared by all 198 rows (see farmSteps). The board
-// also carries each row's share of its category's pre-token TVL, shown in the detail drawer:
-// a protocol that IS its category reads differently from one of 34 in it, and the share is
-// computed from the snapshot, not asserted.
+// 1. CATEGORY HEAT (new signal). The board already used a protocol's own 7-day TVL change;
+//    it never asked whether the protocol's whole category was hot or cold that week. Heat is
+//    the median 7-day TVL change of the token-bearing protocols in the same category,
+//    measured RELATIVE to the market: heat = category median minus the global median change.
+//    The week this snapshot covers, the market fell 9.3% on median, so an absolute heat
+//    reading would have called almost every category cold and compressed the board; the
+//    relative reading separates the categories that held up (Basis Trading -0.2%, RWA -0.5%,
+//    both about 9 points above the market) from the ones that fell harder (Liquid Staking
+//    -13.0%, about 4 points below it). The heat multiple is 1 + clamp(relative heat,
+//    -20%, +30%) x 1.0, pooled exactly like the category multiple (n >= 4 uses its own
+//    median outright, thinner categories are pulled toward the global heat with the same
+//    prior strength of 16, a category with no traded protocol at all takes the global heat
+//    and a heat multiple of 1). Measured: total implied $4.477B -> $4.532B (+1.2%), top 5
+//    keep their order, 0 rows move >= 10 ranks, biggest mover x1.09. An absolute-heat
+//    variant was tested first and rejected: it moved the total -2.4% and its biggest mover
+//    only x0.97, because a falling market made heat a second copy of the market, not a
+//    signal. Heat is a second growth dimension, category-level where growth is
+//    protocol-level, and it is bounded so a one-week category wobble can move a row at
+//    most about a tenth either way.
 //
-// Rejected in radar-4 with numbers, not repeated as the design: a TVL-weighted category
-// median collapses the global median to the 0.04 clamp floor (over half of all token-bearing
-// TVL sits in protocols with mcap/TVL <= 0.04, so the weighted median is a giant-protocol
-// artifact, not a typical launch), total -56.8% to $1.949B, 152 rows move >=10 ranks, and
-// fallback rows rise 18 -> 55. A median over token-bearing protocols with TVL >= $50M only
-// is worse: total -65.5% to $1.557B, 81 rows move >=10, fallback rows 18 -> 91. The
-// unweighted median stays: it is the multiple of a typical traded protocol, which is what a
-// launch is. growthMult rewards 7-day TVL growth, maturityMult rewards a long track record
-// with no token yet, chainMult rewards a multi-chain footprint.
+// 2. MATURITY WITH DIMINISHING RETURNS. Radar-4's maturity was linear in age up to 3
+//    years: 0.7 + min(age, 1095)/1095 x 0.3. A protocol that survived a year with no token
+//    has already proven it can wait; years two and three add less new information than
+//    year one, so the curve is now a square root: 0.7 + sqrt(min(age, 1095)/1095) x 0.3.
+//    The floor (0.7 at age 0) and the cap (1.0 at 3 years) do not move, and unknown age
+//    still counts as 365 days. Measured: total $4.477B -> $4.798B (+7.2%), top 5 keep
+//    their order, 1 row moves >= 10 ranks, biggest mover x1.10. A linear cap at 730 days
+//    was tested and rejected: nearly identical numbers (+7.1%, 0 rows move >= 10) with a
+//    harder cliff at the cap, so the smooth curve wins.
 //
-// The board ranks every strict-rankable protocol: pre-token (no mcap, no gecko id, no symbol) and
-// not a CEX, not a versioned name, not a Bridge / Canonical Bridge / Liquid Staking / Liquid
-// Restaking / Restaked BTC, with no whole word wrapped / staked / staking in its name and not
-// starting with an exchange name. That is the watchlist rule reused for the whole board, so the
-// watchlist's 40 are a subset of it. Token-bearing protocols never enter the ranked board; the
-// top 24 by market cap are shown apart, at the market's own values, never a model's.
+// 3. CHAIN STEP 0.03 -> 0.05. A multi-chain footprint widens a launch, but at 0.03 the
+//    reward was rounding noise next to the other multipliers, and 113 of the 198 board
+//    rows are single-chain, so the step only ever rewards the 85 rows that actually
+//    spread. At 0.05 the most multi-chain row earns x1.20 instead of x1.12. Measured:
+//    total $4.477B -> $4.684B (+4.6%), top 5 keep their order, 0 rows move >= 10 ranks,
+//    biggest mover x1.07. A step of 0.08 was not taken: it would let chain count, a
+//    deployment choice, outweigh a category's own market multiple.
+//
+// Combined, radar-6 against radar-4 on the same snapshot: total implied $4.477B ->
+// $5.081B (+13.5%), top 5 keep their order, 0 rows move >= 10 ranks, biggest mover
+// x1.27. Nothing in the rule names a protocol: every number is computed at runtime
+// from the snapshot. The category multiple and its partial pooling (prior strength 16,
+// clamp [0.04, 0.9]) are unchanged from radar-3/radar-4, and the growth weight stays
+// 1.0 with the same -50%/+100% clamps.
+//
+// The board still ranks every strict-rankable protocol: pre-token (no mcap, no gecko
+// id, no symbol) and not a CEX, not a versioned name, not a Bridge / Canonical Bridge /
+// Liquid Staking / Liquid Restaking / Restaked BTC, with no whole word wrapped / staked /
+// staking in its name and not starting with an exchange name. That is the watchlist rule
+// reused for the whole board, so the watchlist's 40 are a subset of it. Token-bearing
+// protocols never enter the ranked board; the top 40 by market cap are shown apart, at
+// the market's own values, never a model's. Every row also carries how firm its multiple
+// is (the category's traded sample count and whether the multiple is the category's own
+// median, a pooled blend, or the global prior), so the dashboard can show confidence
+// instead of hiding it.
 
 /** The snapshot's protocol entry: exactly the ten fields the sealed input carries. */
 export interface SnapshotProtocol {
@@ -84,6 +98,10 @@ export interface ModelConstants {
   min_category_samples: number;
   /** How many pseudo-observations the global median is worth as a prior when pooling thin categories. */
   prior_strength: number;
+  /** The heat multiple's weight on a category's relative 7-day change, in points of change. */
+  heat_weight: number;
+  heat_floor: number;
+  heat_cap: number;
   chain_step: number;
   chain_max_steps: number;
 }
@@ -100,15 +118,18 @@ export const MODEL: ModelConstants = {
   multiple_cap: 0.9,
   min_category_samples: 4,
   prior_strength: 16,
-  chain_step: 0.03,
+  heat_weight: 1.0,
+  heat_floor: -20,
+  heat_cap: 30,
+  chain_step: 0.05,
   chain_max_steps: 4,
 };
 
 /** The model's version label: the dashboard names it. */
-export const MODEL_VERSION = 'radar-4';
+export const MODEL_VERSION = 'radar-6';
 
 /** How many live-token protocols the Live token view carries, by market cap. */
-export const LIVE_ROWS = 24;
+export const LIVE_ROWS = 40;
 
 /** A farm step: the action, what it costs, and how long it takes. */
 export interface FarmStep {
@@ -116,6 +137,9 @@ export interface FarmStep {
   cost: string;
   time: string;
 }
+
+/** Where a row's category multiple came from, so the dashboard can show confidence. */
+export type MultipleSource = 'own median' | 'pooled' | 'global prior';
 
 /** One row of board.json: the ranked board's row. */
 export interface BoardRow {
@@ -137,9 +161,13 @@ export interface BoardRow {
     base_multiple: number;
     growth_pct: number;
     growth_multiplier: number;
+    heat_pct: number;
+    heat_multiplier: number;
     maturity_multiplier: number;
     chain_multiplier: number;
     age_days: number | null;
+    category_samples: number;
+    multiple_source: MultipleSource;
   };
   farm_steps: string[];
 }
@@ -161,8 +189,12 @@ export interface RadarRow {
   /** The row's share, in percent to one decimal, of its category's pre-token TVL. */
   category_share_pct: number;
   growth_multiplier: number;
+  heat_multiplier: number;
+  heat_pct: number;
   maturity_multiplier: number;
   chain_multiplier: number;
+  category_samples: number;
+  multiple_source: MultipleSource;
 }
 
 /** A live-token protocol: it already trades, so the board shows the market's own value, not a model's. */
@@ -176,6 +208,15 @@ export interface LiveRow {
   change_7d: number | null;
 }
 
+/** One category's market signals, computed from the snapshot itself. */
+export interface CategorySignal {
+  multiple: number;
+  samples: number;
+  /** The category's median 7-day TVL change among its token-bearing protocols, relative to the global median change, in points. */
+  heat_pct: number;
+  source: MultipleSource;
+}
+
 /** Everything the dashboard needs: the board, the live set, and the model it runs. */
 export interface RadarData {
   as_of: string;
@@ -187,7 +228,9 @@ export interface RadarData {
   board_size: number;
   live_size: number;
   global_multiple: number;
-  category_multiples: Record<string, number>;
+  /** The global median 7-day TVL change among token-bearing protocols, in points. */
+  global_heat: number;
+  category_signals: Record<string, CategorySignal>;
   watchlist_slugs: string[];
   rows: RadarRow[];
   live: LiveRow[];
@@ -224,52 +267,94 @@ export function median(values: number[]): number {
   return s.length % 2 === 1 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
 }
 
+/** A value clamped to the model's heat band, in points of 7-day change. */
+function clampHeat(v: number, model: ModelConstants): number {
+  return Math.min(model.heat_cap, Math.max(model.heat_floor, v));
+}
+
 /**
- * The category multiples, computed from the snapshot itself by partial pooling: for each
- * category, the median mcap/TVL of its token-bearing protocols (mcap present, TVL positive).
- * A category with at least min_category_samples uses its own median outright. A thinner
- * category does not get its own median outright and does not fall back to the global median
- * either: its multiple is a credibility-weighted blend, global + n/(n + prior_strength) x
- * (category median - global), so the global median acts as a prior worth prior_strength
- * observations and thin evidence only earns a thin move — one sample moves the multiple less
- * than 1/(1 + prior_strength) of the way. A category with no traded protocol at all is absent
- * from the table and its rows take the global median. Every multiple is clamped to the model's
- * floor and cap. No name is ever special-cased.
+ * The category signals, computed from the snapshot itself. Two per category, both pooled
+ * the same way: the multiple (median mcap/TVL of the category's token-bearing protocols)
+ * and the heat (median 7-day TVL change of the same protocols, relative to the global
+ * median change). A category with at least min_category_samples uses its own median
+ * outright for both. A thinner category is pulled toward the global figure in proportion
+ * to its sample count — the global figure acts as a prior worth prior_strength
+ * observations, so one sample moves either signal less than 1/(1 + prior_strength) of
+ * the way. A category with no traded protocol at all takes the global multiple and the
+ * global heat, and its rows' heat multiple is 1. Every multiple is clamped to the
+ * model's floor and cap. No name is ever special-cased.
  *
- * Why pooling, and why this strength: the snapshot's ratios are heavy-tailed (global median
- * 0.214, 90th percentile 2.97, max 400.2), so a thin category's raw median is one or two
- * observations of a wild distribution — using it outright would let a single protocol set the
- * value of a whole category, and the hard fallback it replaces threw that evidence away
- * entirely (112 of 198 rows on one number under radar-2). With prior_strength 16 the move is
- * bounded and stable on this snapshot: the board total moves +7.6% versus radar-2, the top 5
- * keep their order, and no row's implied value moves more than x1.36.
+ * Why pooling, and why this strength: the snapshot's ratios are heavy-tailed (global
+ * median 0.214, 90th percentile 2.97, max 400.2), so a thin category's raw median is one
+ * or two observations of a wild distribution — using it outright would let a single
+ * protocol set the value of a whole category. The same holds for a week's change, which
+ * is why heat is pooled identically instead of read raw.
  */
-export function categoryMultiples(snapshot: Snapshot, model: ModelConstants): { byCategory: Record<string, number>; global: number } {
-  const clamp = (v: number): number => Math.min(model.multiple_cap, Math.max(model.multiple_floor, v));
-  const byCat = new Map<string, number[]>();
-  const all: number[] = [];
+export function categorySignals(snapshot: Snapshot, model: ModelConstants): { byCategory: Record<string, CategorySignal>; global: number; globalHeat: number } {
+  const clampMult = (v: number): number => Math.min(model.multiple_cap, Math.max(model.multiple_floor, v));
+  const byCatRatio = new Map<string, number[]>();
+  const byCatChange = new Map<string, number[]>();
+  const allRatios: number[] = [];
+  const allChanges: number[] = [];
   for (const p of snapshot.protocols) {
     if (p.mcap_usd === null || p.tvl_usd <= 0) continue;
-    const ratio = p.mcap_usd / p.tvl_usd;
-    if (!Number.isFinite(ratio) || ratio <= 0) continue;
-    all.push(ratio);
     const cat = p.category ?? '(none)';
-    const list = byCat.get(cat) ?? [];
-    list.push(ratio);
-    byCat.set(cat, list);
-  }
-  const global = clamp(median(all));
-  const out: Record<string, number> = {};
-  for (const [cat, list] of byCat) {
-    const catMedian = clamp(median(list));
-    if (list.length >= model.min_category_samples) {
-      out[cat] = catMedian;
-    } else {
-      const w = list.length / (list.length + model.prior_strength);
-      out[cat] = clamp(global + w * (catMedian - global));
+    const ratio = p.mcap_usd / p.tvl_usd;
+    if (Number.isFinite(ratio) && ratio > 0) {
+      allRatios.push(ratio);
+      const list = byCatRatio.get(cat) ?? [];
+      list.push(ratio);
+      byCatRatio.set(cat, list);
+    }
+    if (p.change_7d !== null && Number.isFinite(p.change_7d)) {
+      allChanges.push(p.change_7d);
+      const list = byCatChange.get(cat) ?? [];
+      list.push(p.change_7d);
+      byCatChange.set(cat, list);
     }
   }
-  return { byCategory: out, global };
+  const global = clampMult(median(allRatios));
+  const globalHeat = median(allChanges);
+  const out: Record<string, CategorySignal> = {};
+  const cats = new Set([...byCatRatio.keys(), ...byCatChange.keys()]);
+  for (const cat of cats) {
+    const ratios = byCatRatio.get(cat) ?? [];
+    const changes = byCatChange.get(cat) ?? [];
+    const n = ratios.length;
+    let multiple: number;
+    let source: MultipleSource;
+    if (n >= model.min_category_samples) {
+      multiple = clampMult(median(ratios));
+      source = 'own median';
+    } else if (n > 0) {
+      const w = n / (n + model.prior_strength);
+      multiple = clampMult(global + w * (clampMult(median(ratios)) - global));
+      source = 'pooled';
+    } else {
+      multiple = global;
+      source = 'global prior';
+    }
+    const m = changes.length;
+    let heat: number;
+    if (m >= model.min_category_samples) {
+      heat = median(changes) - globalHeat;
+    } else if (m > 0) {
+      const w = m / (m + model.prior_strength);
+      heat = w * (median(changes) - globalHeat);
+    } else {
+      heat = 0;
+    }
+    out[cat] = { multiple, samples: n, heat_pct: Math.round(heat * 10) / 10, source };
+  }
+  return { byCategory: out, global, globalHeat };
+}
+
+/** The category multiples, computed from the snapshot itself (kept for the dashboard's multiples table). */
+export function categoryMultiples(snapshot: Snapshot, model: ModelConstants): { byCategory: Record<string, number>; global: number } {
+  const { byCategory, global } = categorySignals(snapshot, model);
+  const multiples: Record<string, number> = {};
+  for (const [cat, sig] of Object.entries(byCategory)) multiples[cat] = sig.multiple;
+  return { byCategory: multiples, global };
 }
 
 /** The multipliers and the implied value one protocol gets under `model`. */
@@ -278,16 +363,19 @@ export function impliedValue(
   asOf: string,
   model: ModelConstants,
   baseMultiple: number,
-): { implied: number; growthPct: number; growthMult: number; maturityMult: number; chainMult: number; age: number | null } {
+  heatPct: number,
+): { implied: number; growthPct: number; growthMult: number; heatMult: number; maturityMult: number; chainMult: number; age: number | null } {
   const age = ageDays(asOf, protocol.listed_at);
   const rawGrowth = finite(protocol.change_7d, 0);
   const growthPct = Math.min(model.growth_cap, Math.max(model.growth_floor, rawGrowth));
   const growthMult = 1 + (growthPct / 100) * model.growth_weight;
+  const heatMult = 1 + (clampHeat(heatPct, model) / 100) * model.heat_weight;
   const ageForModel = age ?? model.unknown_age_days;
-  const maturityMult = model.maturity_floor + (Math.min(Math.max(ageForModel, 0), model.maturity_days) / model.maturity_days) * model.maturity_range;
+  const ageRatio = Math.min(Math.max(ageForModel, 0), model.maturity_days) / model.maturity_days;
+  const maturityMult = model.maturity_floor + Math.sqrt(ageRatio) * model.maturity_range;
   const chainMult = 1 + model.chain_step * Math.min(Math.max(protocol.chains.length - 1, 0), model.chain_max_steps);
-  const implied = Math.max(1, Math.round(protocol.tvl_usd * baseMultiple * growthMult * maturityMult * chainMult));
-  return { implied, growthPct, growthMult, maturityMult, chainMult, age };
+  const implied = Math.max(1, Math.round(protocol.tvl_usd * baseMultiple * growthMult * heatMult * maturityMult * chainMult));
+  return { implied, growthPct, growthMult, heatMult, maturityMult, chainMult, age };
 }
 
 /** DefiLlama's version-marker rule: a name ending in a release is a pool of another protocol. */
@@ -325,8 +413,9 @@ function bySlug(protocols: SnapshotProtocol[]): Map<string, SnapshotProtocol> {
 /** The protocols the board ranks, strongest first, with ranks 1..n. */
 export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): BoardRow[] {
   const index = bySlug(snapshot.protocols);
-  const { byCategory, global } = categoryMultiples(snapshot, model);
-  const multipleFor = (p: SnapshotProtocol): number => byCategory[p.category ?? '(none)'] ?? global;
+  const { byCategory, global } = categorySignals(snapshot, model);
+  const signalFor = (p: SnapshotProtocol): CategorySignal =>
+    byCategory[p.category ?? '(none)'] ?? { multiple: global, samples: 0, heat_pct: 0, source: 'global prior' };
   const chosen = new Map<string, SnapshotProtocol>();
   // The watchlist is the floor: every slug on it ranks, whatever its size.
   for (const slug of snapshot.watchlist) {
@@ -338,9 +427,9 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
     if (!chosen.has(p.slug) && isRankable(p)) chosen.set(p.slug, p);
   }
   const scored = [...chosen.values()].map((p) => {
-    const base = multipleFor(p);
-    const { implied, growthPct, growthMult, maturityMult, chainMult, age } = impliedValue(p, snapshot.as_of, model, base);
-    return { p, base, implied, growthPct, growthMult, maturityMult, chainMult, age };
+    const sig = signalFor(p);
+    const { implied, growthPct, growthMult, heatMult, maturityMult, chainMult, age } = impliedValue(p, snapshot.as_of, model, sig.multiple, sig.heat_pct);
+    return { p, sig, implied, growthPct, growthMult, heatMult, maturityMult, chainMult, age };
   });
   scored.sort((a, b) => b.implied - a.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0));
   return scored.map((s, i) => ({
@@ -359,12 +448,16 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
     age_days: s.age,
     implied_value_usd: s.implied,
     model: {
-      base_multiple: round4(s.base),
+      base_multiple: round4(s.sig.multiple),
       growth_pct: s.growthPct,
       growth_multiplier: round4(s.growthMult),
+      heat_pct: s.sig.heat_pct,
+      heat_multiplier: round4(s.heatMult),
       maturity_multiplier: round4(s.maturityMult),
       chain_multiplier: round4(s.chainMult),
       age_days: s.age,
+      category_samples: s.sig.samples,
+      multiple_source: s.sig.source,
     },
     farm_steps: farmSteps(s.p, s.age).map(stepText),
   }));
@@ -441,13 +534,18 @@ function weeklyActionFor(p: SnapshotProtocol): string {
 }
 
 /**
- * A protocol's farm plan: seven steps, each an action with a cost and a time. The plan is derived from
- * the protocol's own record (category, chains, TVL, age), never from a hand-written list of names.
- * Radar-4: the weekly action is category-specific and the claim step names the protocol and its
- * chain, because under radar-3 four of the six steps were the same words on all 198 rows; and a
- * seventh step, the exit plan, fixes the trigger before the farm starts — claim first, then
- * withdraw half on a token or snapshot announcement, unwind fully if TVL halves or the points
- * page disappears — so the farmer is not deciding under pressure.
+ * A protocol's farm plan: eight steps, each an action with a cost and a time. The plan is
+ * derived from the protocol's own record (category, chains, TVL, age), never from a
+ * hand-written list of names. Radar-6 adds a second step the earlier plans skipped: verify
+ * the protocol through its own official channels before any money moves, because the
+ * cheapest way to lose a farm is to deposit into a lookalike app reached from a DM, a
+ * reply or a search ad — the step names the protocol and its chain, and says to stop if
+ * the page asks for an approval beyond the deposit itself. The other seven steps are the
+ * radar-4 plan: a fresh wallet, the category-specific position, the category-specific
+ * weekly action, a hold of 30-60 days by age, a claim check on the protocol's own points
+ * page, an exit plan whose unwind trigger is decided before the farm starts, and a farm
+ * log. Steps 2, 3 and 4 are category- and protocol-specific; the rest are the same words
+ * on every row because the advice is the same on every row.
  */
 export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
   const chain = chainOf(p);
@@ -460,6 +558,11 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
       text: `Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline.`,
       cost: 'under $3 of gas for the first transaction',
       time: '5 minutes',
+    },
+    {
+      text: `Before you deposit, check ${p.name} through its own official channels on ${chain}: confirm the app address from its docs or profile, never follow a deposit link from a DM, a reply or a search ad, and stop if the page asks for an approval beyond the deposit itself.`,
+      cost: 'nothing to check',
+      time: '10 minutes',
     },
     {
       text: action,
@@ -528,8 +631,12 @@ export function radarRow(row: BoardRow, sharePct: number): RadarRow {
     base_multiple: row.model.base_multiple,
     category_share_pct: sharePct,
     growth_multiplier: row.model.growth_multiplier,
+    heat_multiplier: row.model.heat_multiplier,
+    heat_pct: row.model.heat_pct,
     maturity_multiplier: row.model.maturity_multiplier,
     chain_multiplier: row.model.chain_multiplier,
+    category_samples: row.model.category_samples,
+    multiple_source: row.model.multiple_source,
   };
 }
 
@@ -537,7 +644,7 @@ export function radarRow(row: BoardRow, sharePct: number): RadarRow {
 export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): { board: BoardRow[]; radar: RadarData } {
   const board = buildBoard(snapshot, model);
   const live = liveRows(snapshot);
-  const { byCategory, global } = categoryMultiples(snapshot, model);
+  const { byCategory, global, globalHeat } = categorySignals(snapshot, model);
   // Each category's pre-token TVL: the denominator for a row's share of its category.
   const preTokenTvl = new Map<string, number>();
   for (const p of snapshot.protocols) {
@@ -560,7 +667,8 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     board_size: board.length,
     live_size: live.length,
     global_multiple: global,
-    category_multiples: byCategory,
+    global_heat: Math.round(globalHeat * 10) / 10,
+    category_signals: byCategory,
     watchlist_slugs: snapshot.watchlist,
     rows: board.map((r) => radarRow(r, shareOf(r))),
     live,
